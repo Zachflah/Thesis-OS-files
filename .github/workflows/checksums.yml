@@ -1,0 +1,41 @@
+name: Build checksums
+
+on:
+  push:
+    branches: [ main ]        # run on pushes to main
+    tags:    [ "v*" ]         # and on version tags like v1.0.0
+  workflow_dispatch: {}       # allow manual run from the Actions tab
+  schedule:
+    - cron: "0 3 * * 1"       # optional: every Monday 03:00 UTC
+
+permissions:
+  contents: write             # required to commit the manifest back
+
+jobs:
+  checksums:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0      # so tags are available if you trigger on tags
+
+      - name: Generate checksums (SHA-256)
+        run: |
+          mkdir -p manifest
+          { echo "path,algorithm,hash";
+            find Config -type f -name "*.xml" -print0 \
+            | xargs -0 shasum -a 256 \
+            | awk '{h=$1; $1=""; sub(/^ /,""); printf "%s,SHA256,%s\n",$0,h}'
+          } > manifest/checksums.csv
+
+      - name: Commit manifest (skip if unchanged)
+        run: |
+          if git diff --quiet -- manifest/checksums.csv; then
+            echo "No checksum changes."
+          else
+            git config user.name  "github-actions"
+            git config user.email "actions@github.com"
+            git add manifest/checksums.csv
+            git commit -m "Update checksums [skip ci]"
+            git push
+          fi
